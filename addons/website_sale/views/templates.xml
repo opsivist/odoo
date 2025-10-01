@@ -8,7 +8,7 @@
             <a href="/shop/cart" t-attf-class="#{_link_class}" aria-label="eCommerce cart">
                 <div t-attf-class="#{_icon_wrap_class}">
                     <i t-if="_icon" class="fa fa-shopping-cart fa-stack"/>
-                    <sup t-attf-class="my_cart_quantity badge bg-primary #{_badge_class} #{'d-none' if (website_sale_cart_quantity == 0) else ''}" t-out="website_sale_cart_quantity" t-att-data-order-id="request.session.get('sale_order_id', '')"/>
+                    <sup t-attf-class="my_cart_quantity badge bg-primary #{_badge_class} #{'d-none' if (website_sale_cart_quantity == 0) else ''}" t-out="website_sale_cart_quantity" t-att-data-order-id="request.session.get('sale_order_id', None) if website_sale_cart_quantity else None"/>
                 </div>
                 <span t-if="_text" t-attf-class="#{_text_class}">My Cart</span>
             </a>
@@ -711,8 +711,9 @@
                                         t-att-data-editor-message="editor_msg"
                                     />
                                 </t>
-                                <t t-if="opt_wsale_categories_top"
+                                <t t-if="opt_wsale_categories_top and category_entries"
                                    t-call="website_sale.filmstrip_categories"
+                                   entries="category_entries"
                                 />
                                 <div
                                     t-if="not opt_wsale_floating_bar"
@@ -804,6 +805,7 @@
                                                     t-value="product._get_ribbon(
                                                         price_vals=template_price_vals,
                                                         auto_assign_ribbons=auto_assign_ribbons,
+                                                        variant=product_variants[product],
                                                     )"
                                                 />
                                                 <div
@@ -1423,21 +1425,7 @@
 
     <!-- Top-Nav Categories -->
     <template id="website_sale.filmstrip_categories" name="Categories Filmstrip">
-        <t t-if="category.id">
-            <t t-set="entries" t-value="not search and category.child_id or category.child_id.filtered(lambda c: category.id in search_categories_ids)"/>
-
-            <t t-if="not entries">
-                <t t-set="parent" t-value="category.parent_id"/>
-                <t t-set="entries" t-value="not search and parent.child_id or parent.child_id.filtered(lambda c: parent.id in search_categories_ids)"/>
-            </t>
-        </t>
-        <t t-else="">
-            <t t-set="entries" t-value="categories"/>
-        </t>
-        <t t-set="entries" t-value="request.env.user._is_internal() and entries or entries.filtered('has_published_products')"/>
-
         <div
-            t-if="entries"
             id="o_wsale_categories_filmstrip"
             class="o_wsale_filmstrip_container o_wsale_filmstrip_default d-flex align-items-stretch overflow-hidden"
             role="navigation"
