@@ -696,7 +696,7 @@ class HrEmployee(models.Model):
         )
         contract_versions_by_employee = defaultdict(lambda: defaultdict(lambda: self.env["hr.version"]))
         for employee, _date_version, version in all_versions:
-            contract_versions_by_employee[employee.id][version.contract_date_start] |= version
+            contract_versions_by_employee[employee.id][version[0].contract_date_start] |= version
         return contract_versions_by_employee
 
     def _get_all_contract_dates(self):
@@ -1510,7 +1510,7 @@ class HrEmployee(models.Model):
 
         date_from = fields.Date.to_date(date_from)
         for employee in self:
-            employee_versions_sudo = employee.version_ids.sudo().filtered(lambda v: v._is_in_contract(date_from))
+            employee_versions_sudo = employee.sudo().version_ids.filtered(lambda v: v._is_in_contract(date_from))
             if employee_versions_sudo:
                 res[employee.id] = employee_versions_sudo[0].resource_calendar_id.sudo(False)
         return res

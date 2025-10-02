@@ -5,8 +5,9 @@ import {
     EMOJI_REGEX,
     convertBrToLineBreak,
     decorateEmojis,
+    generateEmojisOnHtml,
+    getNonEditableMentions,
     htmlToTextContentInline,
-    prettifyMessageContent,
 } from "@mail/utils/common/format";
 
 import { browser } from "@web/core/browser/browser";
@@ -548,7 +549,7 @@ export class Message extends Record {
             attachment_tokens: attachments
                 .concat(this.attachment_ids)
                 .map((attachment) => attachment.ownership_token),
-            body: await prettifyMessageContent(body, { validMentions }),
+            body: await generateEmojisOnHtml(body),
             partner_ids: validMentions?.partners?.map((partner) => partner.id),
             role_ids: validMentions?.roles?.map((role) => role.id),
         };
@@ -566,14 +567,25 @@ export class Message extends Record {
     }
 
     /** @param {import("models").Thread} thread the thread where the message is being viewed when starting edition */
-    enterEditMode(thread) {
+    async enterEditMode(thread) {
+        const doc = createDocumentFragmentFromContent(this.body);
+        const validChannels = (
+            await Promise.all(
+                Array.from(
+                    doc.querySelectorAll(".o_channel_redirect[data-oe-model='discuss.channel']")
+                ).map(async (el) =>
+                    this.store.Thread.getOrFetch({ id: el.dataset.oeId, model: "discuss.channel" })
+                )
+            )
+        ).filter((channel) => channel?.exists());
         const text = convertBrToLineBreak(this.body);
         if (thread?.messageInEdition) {
             thread.messageInEdition.composer = undefined;
         }
         this.composer = {
+            composerHtml: getNonEditableMentions(this.body),
+            mentionedChannels: validChannels,
             mentionedPartners: this.partner_ids,
-            composerHtml: this.body,
             selection: {
                 start: text.length,
                 end: text.length,
