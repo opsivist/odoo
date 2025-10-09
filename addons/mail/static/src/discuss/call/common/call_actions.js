@@ -7,6 +7,7 @@ import { useService } from "@web/core/utils/hooks";
 import { QuickVoiceSettings } from "./quick_voice_settings";
 import { QuickVideoSettings } from "./quick_video_settings";
 import { attClassObjectToString } from "@mail/utils/common/format";
+import { CALL_PROMOTE_FULLSCREEN } from "./thread_model_patch";
 
 export const callActionsRegistry = registry.category("discuss.call/actions");
 
@@ -30,6 +31,8 @@ export function registerCallAction(id, definition) {
 }
 
 export const muteAction = {
+    badge: ({ store }) => store.rtc.microphonePermission !== "granted",
+    badgeIcon: "fa fa-exclamation",
     condition: ({ store, thread }) => thread?.eq(store.rtc?.channel),
     name: ({ store }) => (store.rtc.selfSession.isMute ? _t("Unmute") : _t("Mute")),
     isActive: ({ store }) =>
@@ -83,6 +86,8 @@ registerCallAction("deafen", {
     tags: ({ action }) => (action.isActive ? ACTION_TAGS.DANGER : undefined),
 });
 export const cameraOnAction = {
+    badge: ({ store }) => store.rtc.cameraPermission !== "granted",
+    badgeIcon: "fa fa-exclamation",
     condition: ({ store, thread }) => thread?.eq(store.rtc?.channel),
     disabledCondition: ({ store }) => store.rtc?.isRemote,
     name: ({ store }) =>
@@ -180,6 +185,12 @@ export const blurBackgroundAction = {
     sequenceGroup: 200,
 };
 registerCallAction("fullscreen", {
+    btnClass: ({ owner, thread }) =>
+        attClassObjectToString({
+            "o-discuss-CallActionList-pulse": Boolean(
+                !owner.env.pipWindow && thread.promoteFullscreen === CALL_PROMOTE_FULLSCREEN.ACTIVE
+            ),
+        }),
     condition: ({ store, thread }) => thread?.eq(store.rtc?.channel),
     name: ({ store }) => (store.rtc.state.isFullscreen ? _t("Exit Fullscreen") : _t("Fullscreen")),
     isActive: ({ store }) => store.rtc.state.isFullscreen,
