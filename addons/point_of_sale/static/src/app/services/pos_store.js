@@ -675,8 +675,8 @@ export class PosStore extends WithLazyGetterTrap {
             return "flex-row-reverse justify-content-between m-1";
         }
     }
-    async onProductInfoClick(productTemplate) {
-        const info = await this.getProductInfo(productTemplate, 1);
+    async onProductInfoClick(productTemplate, productProduct = false) {
+        const info = await this.getProductInfo(productTemplate, 1, 0, productProduct);
         this.dialog.add(ProductInfoPopup, { info: info, productTemplate: productTemplate });
     }
     async openConfigurator(pTemplate, opts = {}) {
@@ -1693,9 +1693,17 @@ export class PosStore extends WithLazyGetterTrap {
             this.printOptions
         );
         if (!printBillActionTriggered) {
-            order.nb_print = order.nb_print ? order.nb_print + 1 : 1;
-            if (order.isSynced && result) {
-                await this.data.write("pos.order", [order.id], { nb_print: order.nb_print });
+            if (result) {
+                const count = order.nb_print ? order.nb_print + 1 : 1;
+                if (order.isSynced) {
+                    const wasDirty = order.isDirty();
+                    await this.data.write("pos.order", [order.id], { nb_print: count });
+                    if (!wasDirty) {
+                        order._dirty = false;
+                    }
+                } else {
+                    order.nb_print = count;
+                }
             }
         } else if (!order.nb_print) {
             order.nb_print = 0;
@@ -2573,7 +2581,11 @@ export class PosStore extends WithLazyGetterTrap {
                 continue;
             }
 
-            if (availableCateg.size && !p.pos_categ_ids.some((c) => availableCateg.has(c.id))) {
+            if (
+                availableCateg.size &&
+                !this.config._pos_special_display_products_ids?.includes(p.id) &&
+                !p.pos_categ_ids.some((c) => availableCateg.has(c.id))
+            ) {
                 continue;
             }
 
