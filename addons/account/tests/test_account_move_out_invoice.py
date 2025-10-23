@@ -4726,6 +4726,32 @@ class TestAccountMoveOutInvoiceOnchanges(AccountTestInvoicingCommon):
             "Narration should be preserved after partner change when invoice terms are disabled"
         )
 
+    def test_narration_translation_on_partner_language_change(self):
+        """Ensure narration translates when partner.lang changes (HTML terms link)."""
+        self.env['ir.config_parameter'].sudo().set_param('account.use_invoice_terms', True)
+        self.env['res.lang']._activate_lang('fr_FR')
+
+        self.env.company.terms_type = 'html'
+
+        # Baseline: en_US user/partner
+        self.partner_a.lang = 'en_US'
+
+        # Create invoice
+        invoice = self.init_invoice(move_type='out_invoice', partner=self.partner_a)
+
+        baseurl = self.env.company.get_base_url() + '/terms'
+
+        # Check the initial narration is in English
+        expected_en = f"<p>Terms &amp; Conditions: {baseurl}</p>"
+        self.assertEqual(invoice.narration, expected_en)
+
+        # Switch to fr_FR
+        self.partner_a.lang = 'fr_FR'
+
+        # Check the narration is in French
+        expected_fr = f"<p>Conditions générales : {baseurl}</p>"
+        self.assertEqual(invoice.narration, expected_fr)
+
     def test_multiple_currency_change(self):
         """
         Test amount currency and balance are correctly recomputed when switching currency multiple times
@@ -4869,3 +4895,20 @@ class TestAccountMoveOutInvoiceOnchanges(AccountTestInvoicingCommon):
             untaxed_amount=invoice.amount_tax,
         )
         self.assertEqual(discounted_amount, 52.95)
+
+    def test_search_move_sent_values(self):
+        # Create a partner to only get invoices from this test
+        partner = self.env['res.partner'].create({
+            'name': 'Test Partner',
+        })
+
+        invoice_sent = self.init_invoice('out_invoice', products=self.product_a, partner=partner, post=True)
+        invoice_sent._generate_and_send()
+
+        invoice_not_sent = self.init_invoice('out_invoice', products=self.product_a, partner=partner, post=True)
+
+        res = self.env['account.move'].search([('partner_id', '=', partner.id), ('move_sent_values', '=', 'sent')])
+        self.assertEqual(invoice_sent, res)
+
+        res = self.env['account.move'].search([('partner_id', '=', partner.id), ('move_sent_values', '=', 'not_sent')])
+        self.assertEqual(invoice_not_sent, res)
