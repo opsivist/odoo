@@ -20,8 +20,13 @@ import { useThrottleForAnimation } from "@web/core/utils/timing";
 import { closestScrollableY } from "@web/core/utils/scrolling";
 import { _t } from "@web/core/l10n/translation";
 import { localization } from "@web/core/l10n/localization";
+import { isBrowserSafari } from "@web/core/browser/feature_detection";
 
 const IFRAME_VALUE_SELECTOR = ".o_mass_mailing_value";
+const MASS_MAILING_IFRAME_ASSETS = [
+    "mass_mailing.assets_iframe_style",
+    "mass_mailing.assets_inside_builder_iframe",
+];
 
 export class MassMailingIframe extends Component {
     static template = "mass_mailing.MassMailingIframe";
@@ -192,8 +197,13 @@ export class MassMailingIframe extends Component {
         );
     }
 
+    get isBrowserSafari() {
+        return isBrowserSafari();
+    }
+
     async setupIframe() {
-        await this.loadIframeAssets();
+        this.iframeRef.el?.contentDocument.head.appendChild(this.renderHeadContent());
+        this.bundleControls = await this.loadIframeAssets();
         if (status(this) === "destroyed") {
             return;
         }
@@ -204,7 +214,6 @@ export class MassMailingIframe extends Component {
         } else {
             this.iframeRef.el.contentDocument.body.classList.add("bg-white");
         }
-        this.iframeRef.el.contentDocument.head.appendChild(this.renderHeadContent());
         this.iframeRef.el.contentDocument.body.appendChild(this.renderBodyContent());
         htmlResizeObserver.observe(
             this.iframeRef.el.contentDocument.body.querySelector(IFRAME_VALUE_SELECTOR)
@@ -220,7 +229,10 @@ export class MassMailingIframe extends Component {
         this.iframeRef.el.contentWindow.addEventListener("beforeUnload", () => {
             this.iframeRef.el.removeAttribute("is-ready");
         });
-        this.iframeLoaded.resolve(this.iframeRef.el);
+        this.iframeLoaded.resolve({
+            iframe: this.iframeRef.el,
+            bundleControls: this.bundleControls,
+        });
         this.props.onIframeLoad?.(this.iframeLoaded);
         this.state.ready = true;
     }
@@ -262,14 +274,38 @@ export class MassMailingIframe extends Component {
         );
     }
 
+    /**
+     * @returns {Object} bundleControls { bundleName: activatorObject }
+     */
     async loadIframeAssets() {
-        await Promise.all([
-            loadBundle("mass_mailing.assets_iframe_style", {
-                targetDoc: this.iframeRef.el.contentDocument,
-                css: true,
-                js: false,
-            }),
-        ]);
+        const bundleEntryPromises = MASS_MAILING_IFRAME_ASSETS.map(async (bundle) => {
+            const targets = (
+                await loadBundle(bundle, {
+                    targetDoc: this.iframeRef.el.contentDocument,
+                    css: true,
+                    js: false,
+                })
+            ).map((bundleEvent) => bundleEvent.target);
+            const iframe = this.iframeRef.el;
+            return [
+                bundle,
+                {
+                    toggle(enable = false) {
+                        if (!iframe?.isConnected) {
+                            return;
+                        }
+                        for (const target of targets) {
+                            if (enable && !iframe.contentDocument.head.contains(target)) {
+                                iframe.contentDocument.head.appendChild(target);
+                            } else if (!enable && iframe.contentDocument.head.contains(target)) {
+                                target.remove();
+                            }
+                        }
+                    },
+                },
+            ];
+        });
+        return Object.fromEntries(await Promise.all(bundleEntryPromises));
     }
 
     onBlur(ev) {
@@ -289,7 +325,7 @@ export class MassMailingIframe extends Component {
     getBuilderProps() {
         return {
             overlayRef: this.overlayRef,
-            iframeLoaded: this.iframeLoaded,
+            iframeLoaded: this.iframeLoaded.then((iframeInfo) => iframeInfo.iframe),
             snippetsName: "mass_mailing.email_designer_snippets",
             config: this.props.config,
             isMobile: this.state.isMobile,

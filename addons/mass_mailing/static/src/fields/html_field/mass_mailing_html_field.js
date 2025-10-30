@@ -12,6 +12,7 @@ import { registry } from "@web/core/registry";
 import { Deferred } from "@web/core/utils/concurrency";
 import { effect } from "@web/core/utils/reactive";
 import { useChildRef, useService } from "@web/core/utils/hooks";
+import { Domain } from "@web/core/domain";
 
 export class MassMailingHtmlField extends HtmlField {
     static template = "mass_mailing.HtmlField";
@@ -128,14 +129,10 @@ export class MassMailingHtmlField extends HtmlField {
         this.iframeLoaded = new Deferred();
     }
 
-    /**
-     * @returns {Boolean} whether the current iframe finished loading and is
-     *          still currently in use.
-     */
     async ensureIframeLoaded() {
         const iframeLoaded = this.iframeLoaded;
-        await iframeLoaded;
-        return iframeLoaded === this.iframeLoaded;
+        const iframeInfo = await iframeLoaded;
+        return iframeLoaded === this.iframeLoaded ? iframeInfo : undefined;
     }
 
     onIframeLoad(iframeLoaded) {
@@ -224,6 +221,7 @@ export class MassMailingHtmlField extends HtmlField {
         delete config.Plugins;
         return {
             ...config,
+            record: this.props.record,
             mobileBreakpoint: "md",
             defaultImageMimetype: "image/jpeg",
             onEditorReady: () => this.commitChanges(),
@@ -304,9 +302,11 @@ export class MassMailingHtmlField extends HtmlField {
      * @override
      */
     async updateValue(value) {
-        if (!(await this.ensureIframeLoaded())) {
+        const iframeInfo = await this.ensureIframeLoaded();
+        if (!iframeInfo) {
             return;
         }
+        const { bundleControls } = iframeInfo;
         this.lastValue = normalizeHTML(value, this.clearElementToCompare.bind(this));
         this.isDirty = false;
         const shouldRestoreDisplayNone = this.iframeRef.el.classList.contains("d-none");
@@ -318,11 +318,14 @@ export class MassMailingHtmlField extends HtmlField {
         const processingContainer = this.iframeRef.el.contentDocument.querySelector(
             ".o_mass_mailing_processing_container"
         );
+        bundleControls["mass_mailing.assets_inside_builder_iframe"]?.toggle(false);
         processingContainer.append(processingEl);
+        this.preprocessFilterDomains(processingEl);
         const cssRules = getCSSRules(this.iframeRef.el.contentDocument);
         await toInline(processingEl, cssRules);
         const inlineValue = processingEl.innerHTML;
         processingEl.remove();
+        bundleControls["mass_mailing.assets_inside_builder_iframe"]?.toggle(true);
         this.iframeRef.el.style.width = "";
         if (shouldRestoreDisplayNone) {
             this.iframeRef.el.classList.add("d-none");
@@ -334,6 +337,24 @@ export class MassMailingHtmlField extends HtmlField {
             })
             .catch(() => (this.isDirty = true));
         this.props.record.model.bus.trigger("FIELD_IS_DIRTY", this.isDirty);
+    }
+    /**
+     * Processes the data-filter-domain to be converted to a t-if that will be interpreted on send
+     * by QWeb.
+     * TODO EGGMAIL: move in a convert_inline plugin when they are implemented.
+     * @param {HTMLElement} htmlEl
+     */
+    preprocessFilterDomains(htmlEl) {
+        htmlEl.querySelectorAll("[data-filter-domain]").forEach((el) => {
+            let domain;
+            try {
+                domain = new Domain(JSON.parse(el.dataset.filterDomain));
+            } catch {
+                el.setAttribute("t-if", "false");
+                return;
+            }
+            el.setAttribute("t-if", `object.filtered_domain(${domain.toString()})`);
+        });
     }
 }
 
