@@ -40,8 +40,10 @@ class ProductTemplate(models.Model):
         help="""With perpetual valuation, this account will hold the price difference between the standard price and the bill price.""")
 
     def _search_valuation(self, operator, value):
-        if operator != '=' or value not in ['periodic', 'real_time']:
-            raise UserError(_("Invalid search on valuation"))
+        if operator != '=':
+            raise UserError(self.env._("You can only use the '=' operator to search on valuation field."))
+        if value not in ['periodic', 'real_time']:
+            raise UserError(self.env._("Only the value 'periodic' and 'real_time' are accepted to search on valuation field."))
         domain_categ = Domain([('categ_id.property_valuation', operator, value)])
         domain_company = Domain(['|', ('categ_id.property_valuation', '=', False), ('categ_id', '=', False), ('company_id.inventory_valuation', operator, value)])
         return domain_company | domain_categ
@@ -225,8 +227,15 @@ class ProductProduct(models.Model):
         return sum(lots.mapped('total_value'))
 
     def _with_valuation_context(self):
+        self_with_context = self
         valued_locations = self.env['stock.location'].search([('is_valued_internal', '=', True)])
-        return self.with_context(location=valued_locations.ids)
+        self_with_context = self.with_context(location=valued_locations.ids)
+        # In FIFO, the stack in on stock.move and their value is already computed base on the owner
+        if self.cost_method != 'fifo':
+            self_with_context = self_with_context.with_context(
+                owners=[False, self.env.company.partner_id.id]
+            )
+        return self_with_context
 
     def _get_remaining_moves(self):
         moves_qty_by_product = {}
@@ -239,11 +248,6 @@ class ProductProduct(models.Model):
             qty_by_move[moves[0]] = remaining_qty
             moves_qty_by_product[product] = qty_by_move
         return moves_qty_by_product
-
-    def _get_cogs_value(self, quantity):
-        if self.cost_method in ['standard', 'average']:
-            return self.standard_price * quantity
-        return self._run_fifo(quantity)
 
     def _run_avco(self, at_date=None, lot=None, method="realtime"):
         """ Recompute the average cost of the product base on the last closing
@@ -453,8 +457,8 @@ class ProductCategory(models.Model):
             ('real_time', 'Perpetual (at invoicing)'),
         ],
         company_dependent=True, copy=True, tracking=True,
-        help="""Manual: The accounting entries to value the inventory are not posted automatically.
-        Automated: An accounting entry is automatically created to value the inventory when a product enters or leaves the company.
+        help="""Periodic: The accounting entries are suggested manually in the inventory valuation report.
+        Perpetual: An accounting entry is automatically created to value the inventory when a product is billed or invoiced.
         """)
     property_cost_method = fields.Selection(
         string="Costing Method",
@@ -482,6 +486,9 @@ class ProductCategory(models.Model):
         'account.account', 'Price Difference Account', company_dependent=True, ondelete='restrict',
         check_company=True,
         help="""With perpetual valuation, this account will hold the price difference between the standard price and the bill price.""")
+    account_stock_variation_id = fields.Many2one(
+        'account.account', string="Stock Variation Account", readonly=False,
+        related="property_stock_valuation_account_id.account_stock_variation_id")
 
     @api.depends_context('company')
     def _compute_anglo_saxon_accounting(self):
