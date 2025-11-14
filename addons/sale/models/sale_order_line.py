@@ -70,7 +70,7 @@ class SaleOrderLine(models.Model):
     is_configurable_product = fields.Boolean(
         string="Is the product configurable?",
         related='product_template_id.has_configurable_attributes',
-        depends=['product_id'])
+        depends=['product_template_id'])
     is_downpayment = fields.Boolean(
         string="Is a down payment",
         help="Down payments are made when creating invoices from a sales order."
@@ -972,8 +972,7 @@ class SaleOrderLine(models.Model):
         """
         invoiced_quantities = self._prepare_qty_invoiced()
         for line in self:
-            if not line.qty_invoiced or line in invoiced_quantities:
-                line.qty_invoiced = invoiced_quantities[line]
+            line.qty_invoiced = invoiced_quantities[line]
 
     @api.depends('qty_invoiced')
     @api.depends_context('accrual_entry_date')
