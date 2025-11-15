@@ -902,6 +902,8 @@ class TestPurchase(AccountTestInvoicingCommon):
                 'product_id': product_with_warning2.id,
             },
         ])
+        group_warning_purchase = self.env.ref('purchase.group_warning_purchase')
+        self.env.user.group_ids.implied_ids = [Command.link(group_warning_purchase.id)]
         purchase_order2.button_confirm()
         purchase_order2.action_create_invoice()
         invoice = Form(purchase_order2.invoice_ids[0])
@@ -914,6 +916,13 @@ class TestPurchase(AccountTestInvoicingCommon):
         self.assertEqual(purchase_order.purchase_warning_text, '\n'.join(expected_warnings))
         self.assertEqual(purchase_order2.purchase_warning_text, '\n'.join(expected_warnings_for_purchase_order2))
         self.assertEqual(invoice.purchase_warning_text, '\n'.join(expected_warnings_for_purchase_order2))
+
+        # without warning group, there should be no warning
+        self.env.user.group_ids.implied_ids = [Command.unlink(group_warning_purchase.id)]
+        self.assertEqual(purchase_order.purchase_warning_text, '')
+        self.assertEqual(purchase_order2.purchase_warning_text, '')
+        invoice = Form(purchase_order2.invoice_ids[0])
+        self.assertEqual(invoice.purchase_warning_text, '')
 
     def test_bill_in_purchase_matching_individual(self):
         """
@@ -1144,3 +1153,25 @@ class TestPurchase(AccountTestInvoicingCommon):
             uom_test.unlink()
 
         self.assertEqual(po.order_line[0].product_uom_id, uom_test)
+
+    def test_locked_purchase_order_cannot_cancel(self):
+        """Test that a locked purchase order cannot be cancelled.
+        A purchase order must be unlocked before it can be cancelled.
+        """
+        po = self.env['purchase.order'].create({
+            'partner_id': self.partner_a.id,
+        })
+        po.button_confirm()
+        self.assertFalse(po.locked)
+        # Lock the purchase order.
+        po.button_lock()
+        self.assertTrue(po.locked, "The purchase order should be locked.")
+
+        # Try to cancel the locked PO, should raise a UserError.
+        with self.assertRaises(UserError):
+            po.button_cancel()
+
+        # Unlock the PO and then cancel it, should succeed.
+        po.button_unlock()
+        po.button_cancel()
+        self.assertEqual(po.state, 'cancel', "The purchase order should be cancelled.")
