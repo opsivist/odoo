@@ -145,6 +145,7 @@ class ProductProduct(models.Model):
         for product in self:
             at_date = fields.Datetime.to_datetime(product.env.context.get('to_date'))
             if at_date:
+                at_date = at_date.replace(hour=23, minute=59, second=59)
                 product = product.with_context(at_date=at_date)
             valuated_product = product.sudo(False)._with_valuation_context()
             qty_available = valuated_product.qty_available
@@ -321,7 +322,7 @@ class ProductProduct(models.Model):
                     in_value = move._get_value(at_date=at_date)
                 if lot:
                     lot_qty = move._get_valued_qty(lot)
-                    in_value = in_value * lot_qty / in_qty
+                    in_value = (in_value * lot_qty / in_qty) if in_qty else 0
                     in_qty = lot_qty
                 if quantity < 0 and quantity + in_qty >= 0:
                     positive_qty = quantity + in_qty
@@ -336,7 +337,7 @@ class ProductProduct(models.Model):
                 out_value = out_qty * avco_value
                 if lot:
                     lot_qty = move._get_valued_qty(lot)
-                    out_value = out_value * lot_qty / out_qty
+                    out_value = (out_value * lot_qty / out_qty) if out_qty else 0
                     out_qty = lot_qty
                 avco_total_value -= out_value
                 quantity -= out_qty
