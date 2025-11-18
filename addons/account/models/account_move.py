@@ -3,7 +3,7 @@
 import ast
 import calendar
 from collections import Counter, defaultdict
-from contextlib import ExitStack, contextmanager
+from contextlib import ExitStack, contextmanager, nullcontext
 from datetime import date, timedelta
 from dateutil.relativedelta import relativedelta
 from hashlib import sha256
@@ -1039,17 +1039,14 @@ class AccountMove(models.Model):
     def _compute_partner_bank_id(self):
         def _bank_selection_key(bank):
             """Sorting priority:
-            0. Same currency as the move
-            1. No currency set
-            2. Different currency
+            0. Same currency as the move or no currency
+            1. Different currency
             Then: prefer banks allowing outgoing payments (trusted ones)
             """
-            if bank.currency_id == move.currency_id:
+            if bank.currency_id == move.currency_id or not bank.currency_id:
                 currency_priority = 0
-            elif not bank.currency_id:
-                currency_priority = 1
             else:
-                currency_priority = 2
+                currency_priority = 1
             return (currency_priority, not bank.allow_out_payment)
 
         for move in self:
@@ -3416,7 +3413,7 @@ class AccountMove(models.Model):
         # Collect data to avoid recomputing value unecessarily
         product_lines_before = {
             move: Counter(
-                (line.name, line.price_subtotal, line.tax_ids, line.deductible_amount)
+                (line.name, line.price_subtotal, line.tax_ids, line.deductible_amount, line.account_id)
                 for line in move.line_ids
                 if line.display_type == 'product'
             )
@@ -3429,7 +3426,7 @@ class AccountMove(models.Model):
         to_create = []
         for move in container['records']:
             product_lines_now = Counter(
-                (line.name, line.price_subtotal, line.tax_ids, line.deductible_amount)
+                (line.name, line.price_subtotal, line.tax_ids, line.deductible_amount, line.account_id)
                 for line in move.line_ids
                 if line.display_type == 'product'
             )
@@ -4735,7 +4732,7 @@ class AccountMove(models.Model):
         if new_lines := (self.invoice_line_ids - existing_lines):
             new_lines.is_imported = True
             if not existing_lines:
-                self._link_bill_origin_to_purchase_orders(timeout=4)
+                self.with_context(default_move_type=self.move_type)._link_bill_origin_to_purchase_orders(timeout=4)
 
         return res
 
@@ -5446,13 +5443,14 @@ class AccountMove(models.Model):
 
             # Handle case when the invoice_date is not set. In that case, the invoice_date is set at today and then,
             # lines are recomputed accordingly (if the user didnt' change the rate manually)
-            if not invoice.invoice_date and invoice.is_invoice(include_receipts=True):
-                if invoice.invoice_currency_rate != invoice.expected_currency_rate:
+            if not invoice.invoice_date:
+                if invoice.is_sale_document(include_receipts=True):
+                    is_manual_rate = invoice.invoice_currency_rate != invoice.expected_currency_rate
                     # keep the rate set by the user
-                    with self.env.protecting([self._fields['invoice_currency_rate']], invoice):
+                    with self.env.protecting([self._fields['invoice_currency_rate']], invoice) if is_manual_rate else nullcontext():
                         invoice.invoice_date = fields.Date.context_today(self)
-                else:
-                    invoice.invoice_date = fields.Date.context_today(self)
+                elif invoice.is_purchase_document(include_receipts=True):
+                    validation_msgs.add(_("The Bill/Refund date is required to validate this document."))
 
         for move in self:
             if move.state in ['posted', 'cancel']:
