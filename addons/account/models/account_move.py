@@ -917,9 +917,8 @@ class AccountMove(models.Model):
     @api.depends('move_type')
     def _compute_is_storno(self):
         for move in self:
-            move.is_storno = move.is_storno or (
-                move.company_id.account_storno and move.move_type in ('out_refund', 'in_refund')
-            )
+            is_refund = move.move_type in ('out_refund', 'in_refund')
+            move.is_storno = move.is_storno or (is_refund and move.company_id.account_storno)
 
     @api.depends('company_id', 'invoice_filter_type_domain')
     def _compute_suitable_journal_ids(self):
@@ -6822,8 +6821,15 @@ class AccountMove(models.Model):
         if self.env.context.get('from_alias'):
             # This is a newly-created invoice from a mail alias.
             # So dispatch the attachments into groups, and create a new invoice for each group beyond the first.
-            file_data_groups = self._group_files_data_into_groups_of_mixed_types(files_data)
+            valid_files_data = []
+            extra_files_data = []
+            for file_data in files_data:
+                if self._should_attach_to_record(file_data['attachment']) or file_data['xml_tree'] is not None:
+                    valid_files_data.append(file_data)
+                else:
+                    extra_files_data.append(file_data)
 
+            file_data_groups = self._group_files_data_into_groups_of_mixed_types(valid_files_data) or [[]]
             invoices = self
             if len(file_data_groups) > 1:
                 create_vals = (len(file_data_groups) - 1) * self.copy_data()
@@ -6831,9 +6837,8 @@ class AccountMove(models.Model):
 
             for invoice, file_data_group in zip(invoices, file_data_groups):
                 attachment_records = self._from_files_data(file_data_group)
-                invoice._fix_attachments_on_record(attachment_records)
-
                 if invoice == self:
+                    attachment_records |= self._from_files_data(extra_files_data)
                     new_message.attachment_ids = [Command.set(attachment_records.ids)]
                     message_values['attachment_ids'] = [Command.link(attachment.id) for attachment in attachment_records]
                     res = super()._message_post_after_hook(new_message, message_values)
@@ -6848,9 +6853,11 @@ class AccountMove(models.Model):
                         'attachment_ids': [Command.link(attachment.id) for attachment in attachment_records],
                     }
                     super(AccountMove, invoice)._message_post_after_hook(sub_new_message, sub_message_values)
+                invoice._fix_attachments_on_record(attachment_records)
 
             for invoice, file_data_group in zip(invoices, file_data_groups):
-                invoice._extend_with_attachments(file_data_group, new=True)
+                if file_data_group:
+                    invoice._extend_with_attachments(file_data_group, new=True)
 
             return res
 
