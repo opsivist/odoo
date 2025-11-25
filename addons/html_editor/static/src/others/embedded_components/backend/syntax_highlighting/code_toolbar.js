@@ -1,30 +1,39 @@
-import { Component, useEffect, useState } from "@odoo/owl";
+import { Component } from "@odoo/owl";
 import { CopyButton } from "@web/core/copy_button/copy_button";
 import { Dropdown } from "@web/core/dropdown/dropdown";
 import { DropdownItem } from "@web/core/dropdown/dropdown_item";
+
+export const LANGUAGES = {
+    plaintext: "Plain Text",
+    markdown: "Markdown",
+    javascript: "Javascript",
+    typescript: "Typescript",
+    jsdoc: "JSDoc",
+    java: "Java",
+    python: "Python",
+    html: "HTML",
+    xml: "XML",
+    svg: "SVG",
+    json: "JSON",
+    css: "CSS",
+    sass: "SASS",
+    scss: "SCSS",
+    sql: "SQL",
+    diff: "Diff",
+};
 
 export class CodeToolbar extends Component {
     static template = "html_editor.CodeToolbar";
     static props = {
         target: { validate: (el) => el.nodeType === Node.ELEMENT_NODE },
-        prismSource: { validate: (el) => el.nodeType === Node.ELEMENT_NODE },
-        languages: { type: Object },
+        getContent: { type: Function },
         onLanguageChange: { type: Function },
+        currentLanguage: { type: String },
     };
     static components = { Dropdown, DropdownItem, CopyButton };
 
     setup() {
         super.setup();
-        this.state = useState({
-            language: this.props.target.dataset.languageId,
-        });
-        useEffect(
-            () => this.props.onLanguageChange(this.state.language),
-            () => [this.state.language]
-        );
-    }
-
-    selectLanguage(language) {
-        this.state.language = language;
+        this.languages = LANGUAGES;
     }
 }
