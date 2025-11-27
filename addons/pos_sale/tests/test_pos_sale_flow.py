@@ -10,6 +10,11 @@ import uuid
 
 @tagged('post_install', '-at_install')
 class TestPoSSale(TestPointOfSaleHttpCommon):
+    @classmethod
+    def get_default_groups(cls):
+        groups = super().get_default_groups()
+        return groups | cls.quick_ref('sales_team.group_sale_manager')
+
     def test_settle_order_with_kit(self):
         if not self.env["ir.module.module"].search([("name", "=", "mrp"), ("state", "=", "installed")]):
             self.skipTest("mrp module is required for this test")
@@ -517,6 +522,7 @@ class TestPoSSale(TestPointOfSaleHttpCommon):
 
         self.main_pos_config.open_ui()
         self.start_tour("/pos/ui/%d" % self.main_pos_config.id, 'PosSettleDraftOrder', login="accountman")
+        self.assertEqual(sale_order.state, 'sale')
 
     def test_settle_order_change_customer(self):
         """
@@ -980,7 +986,10 @@ class TestPoSSale(TestPointOfSaleHttpCommon):
         self.main_pos_config.with_user(self.pos_user).open_ui()
         self.start_tour("/pos/ui/%d" % self.main_pos_config.id, 'PosSettleOrderShipLater', login="accountman")
 
-        self.assertEqual(len(sale_order_single.picking_ids), 0)
+        self.assertEqual(len(sale_order_single.picking_ids), 1)
+        self.assertEqual(sale_order_single.picking_ids.state, "cancel")
+        self.assertEqual(len(sale_order_single.pos_order_line_ids.order_id.picking_ids), 1)
+        self.assertEqual(sale_order_single.pos_order_line_ids.order_id.picking_ids.state, "assigned")
 
         # The pos order is being shipped later so the qty_delivered should still be 0
         self.assertEqual(sale_order_single.order_line[0].qty_delivered, 0)
@@ -995,7 +1004,10 @@ class TestPoSSale(TestPointOfSaleHttpCommon):
         self.assertEqual(sale_order_multi.order_line[0].qty_delivered, 0)
         self.assertEqual(sale_order_multi.order_line[1].qty_delivered, 0)
 
-        self.assertEqual(len(sale_order_multi.picking_ids), 0)
+        self.assertEqual(len(sale_order_multi.picking_ids), 1)
+        self.assertEqual(sale_order_multi.picking_ids.state, "cancel")
+        self.assertEqual(len(sale_order_multi.pos_order_line_ids.order_id.picking_ids), 1)
+        self.assertEqual(sale_order_multi.pos_order_line_ids.order_id.picking_ids.state, "assigned")
 
     def test_draft_pos_order_linked_sale_order(self):
         """This test create an order and settle it in the PoS. It will let the PoS order in draft state.
@@ -1734,3 +1746,50 @@ class TestPoSSale(TestPointOfSaleHttpCommon):
         self.env.flush_all()
         refund_payment.with_context(**payment_context).check()
         self.assertEqual(sale_order.order_line.qty_invoiced, 0)
+
+    def test_settle_order_with_multiple_uom(self):
+        """ Verify that a sale order with multiple UoM can be settled from the PoS."""
+        uom_a, uom_b = self.env['uom.uom'].create([{
+            "name": "UoM A"
+        }, {
+            "name": "UoM B"
+        }])
+
+        product_a, product_b = self.env['product.product'].create([{
+            "name": "Product A",
+            "available_in_pos": True,
+            "is_storable": True,
+            "lst_price": 10.0,
+            "uom_id": uom_a.id,
+            "taxes_id": [],
+        }, {
+            "name": "Product B",
+            "available_in_pos": True,
+            "is_storable": True,
+            "lst_price": 20.0,
+            "uom_id": uom_b.id,
+            "taxes_id": [],
+        }])
+
+        sale_order = self.env["sale.order"].sudo().create({
+            "partner_id": self.env['res.partner'].create({'name': 'Test Partner'}).id,
+            "order_line": [
+                (0, 0, {
+                    "product_id": product_a.id,
+                    "name": product_a.name,
+                    "product_uom_qty": 2,
+                    "product_uom_id": uom_a.id,
+                    "price_unit": product_a.lst_price,
+                }),
+                (0, 0, {
+                    "product_id": product_b.id,
+                    "name": product_b.name,
+                    "product_uom_qty": 3,
+                    "product_uom_id": uom_b.id,
+                    "price_unit": product_b.lst_price,
+                }),
+            ],
+        })
+        sale_order.action_confirm()
+        self.main_pos_config.open_ui()
+        self.start_pos_tour('PoSSettleQuotation', login="accountman")
