@@ -417,6 +417,7 @@ class AccountMoveLine(models.Model):
     analytic_distribution = fields.Json(
         inverse="_inverse_analytic_distribution",
     ) # add the inverse function used to trigger the creation/update of the analytic lines accordingly (field originally defined in the analytic mixin)
+    has_invalid_analytics = fields.Boolean(compute='_compute_has_invalid_analytics')
 
     # === Early Pay fields === #
     discount_date = fields.Date(
@@ -1900,6 +1901,31 @@ class AccountMoveLine(models.Model):
         for line in self:
             line.display_name = line._format_aml_name(line.name or line.product_id.display_name, line.ref, line.move_id.name)
 
+    @api.depends('account_id', 'company_id', 'move_id', 'product_id', 'display_type', 'analytic_distribution')
+    def _compute_has_invalid_analytics(self):
+        SKIPPED_ACCOUNT_TYPES = {'asset_receivable', 'liability_payable', 'asset_cash', 'liability_credit_card'}
+        lines_to_validate = self.filtered(lambda line: (
+            line.display_type == 'product' and
+            line.account_id.account_type not in SKIPPED_ACCOUNT_TYPES
+        ))
+        (self - lines_to_validate).has_invalid_analytics = False
+        for line in lines_to_validate:
+            line.has_invalid_analytics = False
+            try:
+                business_domain = (
+                    'invoice' if line.move_id.is_sale_document(True)
+                    else 'bill' if line.move_id.is_purchase_document(True)
+                    else 'general'
+                )
+                line.with_context(validate_analytic=True)._validate_distribution(
+                    company_id=line.company_id.id,
+                    product=line.product_id.id,
+                    account=line.account_id.id,
+                    business_domain=business_domain,
+                )
+            except ValidationError:
+                line.has_invalid_analytics = True
+
     def copy_data(self, default=None):
         vals_list = super().copy_data(default=default)
 
@@ -3002,6 +3028,10 @@ class AccountMoveLine(models.Model):
                         account.reconcile = True
                     lines.with_context(no_exchange_difference=True, no_cash_basis=True).reconcile()
 
+    def _get_matched_move_ids(self):
+        """ Return a record set with both self.matched_debit_ids & self.matched_credit_ids """
+        return self.matched_debit_ids | self.matched_credit_ids
+
     # -------------------------------------------------------------------------
     # ANALYTIC
     # -------------------------------------------------------------------------
@@ -3061,7 +3091,7 @@ class AccountMoveLine(models.Model):
             distribution_on_each_plan = {}
             for account_ids, distribution in self.analytic_distribution.items():
                 line_values = self._prepare_analytic_distribution_line(float(distribution), account_ids, distribution_on_each_plan)
-                if not self.currency_id.is_zero(line_values.get('amount')):
+                if not self.company_currency_id.is_zero(line_values.get('amount')):
                     analytic_line_vals.append(line_values)
 
             self._round_analytic_distribution_line(analytic_line_vals)
@@ -3122,17 +3152,17 @@ class AccountMoveLine(models.Model):
 
         rounding_error = 0
         for line in analytic_lines_vals:
-            rounded_amount = self.company_id.currency_id.round(line['amount'])
+            rounded_amount = self.company_currency_id.round(line['amount'])
             rounding_error += rounded_amount - line['amount']
             line['amount'] = rounded_amount
 
         # distributing the rounding error
         for line in analytic_lines_vals:
-            if self.currency_id.is_zero(rounding_error):
+            if self.company_currency_id.is_zero(rounding_error):
                 break
             amt = max(
-                self.currency_id.rounding,
-                abs(self.currency_id.round(rounding_error / len(analytic_lines_vals)))
+                self.company_currency_id.rounding,
+                abs(self.company_currency_id.round(rounding_error / len(analytic_lines_vals)))
             )
             if rounding_error < 0.0:
                 line['amount'] += amt
