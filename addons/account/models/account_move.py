@@ -4017,6 +4017,18 @@ class AccountMove(models.Model):
         elif 'invoice_line_ids' in field_names:
             values = {key: val for key, val in values.items() if key != 'line_ids'}
             fields_spec = {key: val for key, val in fields_spec.items() if key != 'line_ids'}
+            # When product_id and price_unit are in values, values is reordered to make sure
+            # that product_id is before price_unit because product_id is triggering an onchange
+            # of price_unit that could override the one defined here if the product_id is set
+            # after price_unit
+            invoice_line_ids = values.get('invoice_line_ids')
+            for invoice_line_idx, invoice_line in enumerate(invoice_line_ids):
+                if (len(invoice_line) == 3 and invoice_line[0] == 1 and isinstance(invoice_line[2], dict) and
+                    'product_id' in invoice_line[2] and 'price_unit' in invoice_line[2]
+                ):
+                    if isinstance(invoice_line, tuple):
+                        invoice_line_ids[invoice_line_idx] = invoice_line = list(invoice_line)
+                    invoice_line[2] = dict(sorted(invoice_line[2].items(), key=lambda item: item[0] != 'product_id'))
         return super().onchange(values, field_names, fields_spec)
 
     # -------------------------------------------------------------------------
@@ -7056,15 +7068,31 @@ class AccountMove(models.Model):
     def get_extra_print_items(self):
         """ Helper to dynamically add items in the 'Print' menu of list and form of account.move.
         """
-        if posted_moves := self.filtered(lambda m: m.state == 'posted' and m.is_move_sent):
+        if moves_to_export := self.filtered(lambda m: m._get_move_zip_export_docs()):
             return [
                 {
                     'key': 'download_all',
                     'description': _("Export ZIP"),
-                    **posted_moves.action_move_download_all(),
+                    **moves_to_export.action_move_download_all(),
                 },
             ]
         return []
+
+    def _get_move_zip_export_docs(self):
+        self.ensure_one()
+
+        if self.state != 'posted':
+            return []
+
+        if self.is_purchase_document(include_receipts=True):
+            attachment = self.message_main_attachment_id
+            return [{
+                'filename': attachment.name,
+                'filetype': attachment.mimetype,
+                'content': attachment.raw,
+            }] if attachment else []
+
+        return self._get_invoice_legal_documents_all()
 
     def _get_move_lines_to_report(self):
         def show_line(line):
