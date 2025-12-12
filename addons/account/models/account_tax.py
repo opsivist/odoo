@@ -2397,7 +2397,7 @@ class AccountTax(models.Model):
                 tax_rep_data = {
                     'tax_rep': tax_rep,
                     'tax_amount_currency': currency.round(tax_amount_currency * tax_rep.factor * tax_rep_sign),
-                    'tax_amount': currency.round(tax_data['tax_amount'] * tax_rep.factor * tax_rep_sign),
+                    'tax_amount': company_currency.round(tax_data['tax_amount'] * tax_rep.factor * tax_rep_sign),
                     'account': tax_rep._get_aml_target_tax_account(force_caba_exigibility=include_caba_tags) or base_line['account_id'],
                 }
                 total_tax_rep_amounts['tax_amount_currency'] += tax_rep_data['tax_amount_currency']
@@ -3359,16 +3359,15 @@ class AccountTax(models.Model):
         new_tax_details_list = self._split_tax_details(base_line, company, target_factors)
 
         # Split 'base_line'.
-        new_base_lines = []
-        for (_index, factor), new_tax_details, target_factor in zip(factors, new_tax_details_list, target_factors):
+        new_base_lines = [None] * len(factors)
+        for (index, factor), new_tax_details, target_factor in zip(factors, new_tax_details_list, target_factors):
             kwargs = {
                 'price_unit': factor * base_line['price_unit'],
                 'tax_details': new_tax_details,
             }
             if populate_function:
                 populate_function(base_line, target_factor, kwargs)
-            new_base_line = self._prepare_base_line_for_taxes_computation(base_line, **kwargs)
-            new_base_lines.append(new_base_line)
+            new_base_lines[index] = self._prepare_base_line_for_taxes_computation(base_line, **kwargs)
         return new_base_lines
 
     @api.model
@@ -4219,14 +4218,7 @@ class AccountTax(models.Model):
                 taxes += gb_tax_data['tax']
             taxes = taxes.filtered(lambda tax: tax._can_be_discounted())
 
-            # Compute the raw totals implied by the base line.
-            raw_total_amount_currency = tax_details['raw_total_excluded_currency']
-            for gb_tax_data in taxes_data:
-                raw_total_amount_currency += gb_tax_data['raw_tax_amount_currency']
-
             discount_data = discount_data_per_taxes.setdefault(taxes, {
-                'raw_total_amount_currency': 0.0,
-                'base_lines_raw_total_amount_currency': [],
                 'base_lines': [],
                 'discount_base_lines': [],
             })
@@ -4239,27 +4231,17 @@ class AccountTax(models.Model):
             if base_line['special_type'] == 'global_discount':
                 discount_data['discount_base_lines'].append(new_base_line)
             else:
-                discount_data['raw_total_amount_currency'] += raw_total_amount_currency
                 discount_data['base_lines'].append(new_base_line)
-                discount_data['base_lines_raw_total_amount_currency'].append(raw_total_amount_currency)
             new_base_lines.append(new_base_line)
 
         # Split the discount base line accross the others.
         for discount_data in discount_data_per_taxes.values():
-            sum_raw_total_amount_currency = discount_data['raw_total_amount_currency']
             discount_data['target_factors'] = [
                 {
                     'base_line': base_line,
-                    'factor': (
-                        abs(raw_total_amount_currency / sum_raw_total_amount_currency)
-                        if sum_raw_total_amount_currency
-                        else 0.0
-                    ),
+                    'factor': base_line['tax_details']['raw_total_excluded_currency'],
                 }
-                for base_line, raw_total_amount_currency in zip(
-                    discount_data['base_lines'],
-                    discount_data['base_lines_raw_total_amount_currency'],
-                )
+                for base_line in discount_data['base_lines']
             ]
             if discount_data['target_factors']:
                 dispatched_neg_base_lines += discount_data['discount_base_lines']
