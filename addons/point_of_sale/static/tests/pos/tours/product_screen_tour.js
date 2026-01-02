@@ -843,8 +843,10 @@ registry.category("web_tour.tours").add("test_product_create_update_from_fronten
                 ),
             ]),
             ProductScreen.longPressProduct("Test Frontend Product Edited"),
-            // Edit button should be disabled (cause we cannot edit a product which is in the cart)
-            Dialog.footerBtnIsDisabled("Edit"),
+            Dialog.confirm("Edit", ".btn-secondary"),
+            Dialog.is({ title: "Edit Product" }),
+            // Product 'taxes_id' field should be reaonly (cause already in the cart)
+            ProductScreen.ensureTaxesInputIsReadonly(),
             Chrome.endTour(),
         ].flat(),
 });
@@ -1040,15 +1042,21 @@ registry
             [
                 Chrome.startPoS(),
                 Dialog.confirm("Open Register"),
+                PartnerList.searchCustomerValue("Partner Full", true),
+                PartnerList.clickPartner("Partner Full"),
                 ProductScreen.clickDisplayedProduct("Desk Organizer"),
                 ProductScreen.clickFastPaymentButton("Bank"),
                 ReceiptScreen.isShown(),
+                PartnerList.isShown().map(negateStep),
                 ReceiptScreen.clickNextOrder(),
+                PartnerList.searchCustomerValue("Partner Full", true),
+                PartnerList.clickPartner("Partner Full"),
                 ProductScreen.clickDisplayedProduct("Desk Organizer"),
                 ProductScreen.clickPayButton(),
                 PaymentScreen.clickPaymentMethod("Bank"),
                 PaymentScreen.clickValidate(),
                 ReceiptScreen.isShown(),
+                PartnerList.isShown().map(negateStep),
             ].flat(),
     });
 
@@ -1187,6 +1195,7 @@ registry.category("web_tour.tours").add("test_preset_customer_selection", {
         [
             Chrome.startPoS(),
             Dialog.confirm("Open Register"),
+            PartnerList.searchCustomerValue("Test Partner", true),
             PartnerList.clickPartner("Test Partner"),
             ProductScreen.customerIsSelected("Test Partner"),
             Chrome.endTour(),

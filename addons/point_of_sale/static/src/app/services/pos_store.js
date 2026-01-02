@@ -2154,6 +2154,7 @@ export class PosStore extends WithLazyGetterTrap {
      * @param {import("@point_of_sale/app/models/product_product").ProductProduct?} product leave undefined to create a new product
      */
     async editProduct(product) {
+        const orderContainsProduct = product && this.orderContainsProduct(product);
         this.action.doAction(
             product
                 ? "point_of_sale.product_template_action_edit_pos"
@@ -2170,6 +2171,9 @@ export class PosStore extends WithLazyGetterTrap {
                             type: "ir.actions.act_window_close",
                         });
                     },
+                },
+                additionalContext: {
+                    taxes_readonly: orderContainsProduct,
                 },
             }
         );
@@ -2201,6 +2205,9 @@ export class PosStore extends WithLazyGetterTrap {
         return {
             resModel: "pos.order",
             resId: order.id,
+            context: {
+                from_frontend: true,
+            },
             onRecordSaved: async (record) => {
                 await this.data.loadServerOrders([["id", "=", record.evalContext.id]]);
                 this.action.doAction({
@@ -2278,6 +2285,8 @@ export class PosStore extends WithLazyGetterTrap {
         }
 
         if (preset) {
+            order.setPreset(preset);
+
             if (preset.needsPartner) {
                 const partner = order.partner_id || (await this.selectPartner(order));
                 if (!partner) {
@@ -2291,7 +2300,7 @@ export class PosStore extends WithLazyGetterTrap {
                     }
                 }
             }
-            order.setPreset(preset);
+
             if (preset.identification === "name") {
                 await this.handleSelectNamePreset(order);
             }
