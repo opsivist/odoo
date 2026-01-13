@@ -1360,6 +1360,9 @@ class TestUi(TestPointOfSaleHttpCommon):
         order = self.env['pos.order'].search([])
         self.assertTrue(order[0].name == order[1].name + " REFUND")
 
+    def test_customer_display_popup(self):
+        self.start_tour("/pos/ui?config_id=%d" % self.main_pos_config.id, 'customer_display_shows_qr_popup', login="pos_user")
+
     def test_lot_refund(self):
 
         self.product1 = self.env['product.product'].create({
@@ -3405,6 +3408,36 @@ class TestUi(TestPointOfSaleHttpCommon):
         self.monitor_stand.tracking = 'lot'
         self.start_tour("/pos/ui?config_id=%d" % self.main_pos_config.id, 'test_lot_tracking_without_lot_creation', login="pos_user")
 
+    def test_refund_line_keep_attributes(self):
+        """
+        Tests that when refunding an order that has lines that are variants, the new line keeps
+        this variant and displays it.
+        """
+        product_test = self.env['product.product'].create({
+            'name': 'Donut',
+            'list_price': 10,
+            'available_in_pos': True,
+            'taxes_id': False,
+        })
+        attribute = self.env['product.attribute'].create({
+            'name': 'Flavor',
+            'create_variant': 'always',
+        })
+        attribute_value_1 = self.env['product.attribute.value'].create({
+            'name': 'Sugar',
+            'attribute_id': attribute.id,
+        })
+        attribute_value_2 = self.env['product.attribute.value'].create({
+            'name': 'Chocolate',
+            'attribute_id': attribute.id,
+        })
+        self.env['product.template.attribute.line'].create({
+            'product_tmpl_id': product_test.product_tmpl_id.id,
+            'attribute_id': attribute.id,
+            'value_ids': [(6, 0, [attribute_value_1.id, attribute_value_2.id])],
+        })
+        self.start_pos_tour("test_refund_line_keep_attributes")
+
     def test_orderline_merge_with_higher_price_precision(self):
         """ Test that orderline merging works correctly when product price has a higher precision than the currency. """
         self.env['decimal.precision'].search([('name', '=', 'Product Price')]).digits = 3
@@ -3424,6 +3457,10 @@ class MobileTestUi(TestUi):
     browser_size = '375x667'
     touch_enabled = True
     allow_inherited_tests_method = True
+
+    # Skip customer display web tests on mobile
+    def test_customer_display_popup(self):
+        return
 
 
 class TestTaxCommonPOS(TestPointOfSaleHttpCommon, TestTaxCommon):
