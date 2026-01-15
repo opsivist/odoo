@@ -48,7 +48,6 @@ import { EpsonPrinter } from "@point_of_sale/app/utils/printer/epson_printer";
 import OrderPaymentValidation from "../utils/order_payment_validation";
 import { logPosMessage } from "../utils/pretty_console_log";
 import { initLNA } from "../utils/init_lna";
-import { uuid } from "@web/core/utils/strings";
 
 const { DateTime } = luxon;
 export const CONSOLE_COLOR = "#F5B427";
@@ -578,48 +577,52 @@ export class PosStore extends WithLazyGetterTrap {
     }
 
     async deleteOrders(orders, serverIds = [], ignoreChange = false) {
-        const ids = new Set();
-        for (const order of orders) {
-            if (order && (await this._onBeforeDeleteOrder(order))) {
-                if (
-                    !ignoreChange &&
-                    order.isSynced &&
-                    Object.keys(order.last_order_preparation_change).length > 0
-                ) {
-                    const orderPresetDate = DateTime.fromISO(order.preset_time);
-                    const isSame = DateTime.now().hasSame(orderPresetDate, "day");
-                    if (!order.preset_time || isSame) {
-                        await this.sendOrderInPreparation(order, {
-                            cancelled: true,
-                            orderDone: true,
-                        });
+        const ordersToDelete = [];
+        const actionPosOrderCancelCall = async (orderIds) => {
+            await this.data.call("pos.order", "action_pos_order_cancel", orderIds, {
+                context: {
+                    device_identifier: this.device.identifier,
+                },
+            });
+        };
+        try {
+            for (const order of orders) {
+                if (order && (await this._onBeforeDeleteOrder(order))) {
+                    if (
+                        !ignoreChange &&
+                        order.isSynced &&
+                        Object.keys(order.last_order_preparation_change).length > 0
+                    ) {
+                        const orderPresetDate = DateTime.fromISO(order.preset_time);
+                        const isSame = DateTime.now().hasSame(orderPresetDate, "day");
+                        if (!order.preset_time || isSame) {
+                            await this.sendOrderInPreparation(order, {
+                                cancelled: true,
+                                orderDone: true,
+                            });
+                        }
                     }
-                }
 
-                const cancelled = this.removeOrder(order, false);
-                this.removePendingOrder(order);
-                if (!cancelled) {
+                    if (order.isSynced) {
+                        await actionPosOrderCancelCall([order.id]);
+                    }
+                    ordersToDelete.push(order);
+                } else {
                     return false;
-                } else if (order.isSynced) {
-                    ids.add(order.id);
                 }
-            } else {
-                return false;
             }
-        }
 
-        if (serverIds.length > 0) {
-            for (const id of serverIds) {
-                if (typeof id !== "number") {
-                    continue;
-                }
-                ids.add(id);
+            if (serverIds.length > 0) {
+                await actionPosOrderCancelCall([
+                    ...new Set(serverIds.filter((id) => typeof id === "number")),
+                ]);
             }
-        }
-
-        if (ids.size > 0) {
-            await this.data.call("pos.order", "action_pos_order_cancel", [Array.from(ids)]);
-            return true;
+        } finally {
+            // Remove orders locally at the end to avoid reactivity during the async process
+            for (const order of ordersToDelete) {
+                this.removeOrder(order, false);
+                this.removePendingOrder(order);
+            }
         }
 
         return true;
@@ -2062,11 +2065,10 @@ export class PosStore extends WithLazyGetterTrap {
     }
 
     async printOrderChanges(data, printer) {
-        const actionId = data.changes.data[0]?.uuid || uuid();
         const receipt = renderToElement("point_of_sale.OrderChangeReceipt", {
             data: data,
         });
-        return await printer.printReceipt(receipt, actionId);
+        return await printer.printReceipt(receipt);
     }
 
     filterChangeByCategories(categories, currentOrderChange) {
