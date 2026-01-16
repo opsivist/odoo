@@ -916,10 +916,19 @@ export class PosStore extends WithLazyGetterTrap {
                 const decimalAccuracy = this.models["decimal.precision"].find(
                     (dp) => dp.name === "Product Unit"
                 ).digits;
+
+                const overridedValues = {};
+                if (order.pricelist_id) {
+                    overridedValues.pricelist = order.pricelist_id;
+                }
+                if (order.fiscal_position_id) {
+                    overridedValues.fiscalPosition = order.fiscal_position_id;
+                }
+
                 this.scale.setProduct(
                     values.product_id,
                     decimalAccuracy,
-                    values.product_id.getTaxDetails().total_included
+                    values.product_id.getTaxDetails({ overridedValues }).total_included
                 );
                 const weight = await this.weighProduct();
                 if (weight) {
@@ -1586,7 +1595,8 @@ export class PosStore extends WithLazyGetterTrap {
             productProduct?.id,
         ]);
 
-        const priceWithoutTax = productInfo["all_prices"]["price_without_tax"];
+        const productTaxDetails = productTemplate.getTaxDetails();
+        const priceWithoutTax = productTaxDetails.total_excluded;
         const margin = priceWithoutTax - productTemplate.standard_price;
         const orderPriceWithoutTax = order.priceExcl;
         const orderCost = order.getTotalCost();
@@ -1598,9 +1608,9 @@ export class PosStore extends WithLazyGetterTrap {
             order.prices.taxDetails.order_sign * order.prices.taxDetails.total_amount_currency
         );
         const taxAmount = this.env.utils.formatCurrency(
-            productInfo.all_prices.tax_details[0]?.amount || 0
+            productTaxDetails.taxes_data.reduce((sum, d) => sum + d.tax_amount_currency, 0)
         );
-        const taxName = productInfo.all_prices.tax_details[0]?.name || "";
+        const taxName = productTemplate.taxes_id.map((t) => t.name)?.join(", ");
 
         const costCurrency = this.env.utils.formatCurrency(productTemplate.standard_price);
         const marginCurrency = this.env.utils.formatCurrency(margin);
@@ -2784,30 +2794,31 @@ export class PosStore extends WithLazyGetterTrap {
         }
     }
 
-    sortByWordIndex(products, words) {
-        return products.sort((a, b) => {
-            const nameA = normalize(a.name);
-            const nameB = normalize(b.name);
-
-            const indexA = nameA.indexOf(words);
-            const indexB = nameB.indexOf(words);
-            return (
-                (indexA === -1) - (indexB === -1) || indexA - indexB || nameA.localeCompare(nameB)
-            );
-        });
-    }
-
     getProductsBySearchWord(searchWord, products) {
-        const words = normalize(searchWord);
-        const matches = products.filter(
-            (p) =>
-                normalize(p.searchString).includes(words) ||
-                p.product_variant_ids.some((variant) =>
-                    normalize(variant.searchString).includes(words)
-                )
+        const query = normalize(searchWord);
+        const matches = [];
+
+        for (const product of products) {
+            const searchStr = product.searchString;
+
+            if (searchStr.includes(query)) {
+                const normName = product.normalizedName;
+                matches.push({
+                    product: product,
+                    index: normName.indexOf(query),
+                    name: normName,
+                });
+            }
+        }
+
+        matches.sort(
+            (a, b) =>
+                (a.index === -1) - (b.index === -1) ||
+                a.index - b.index ||
+                (a.name == b.name ? 0 : a.name > b.name ? 1 : -1)
         );
 
-        return this.sortByWordIndex(matches, words);
+        return matches.map((m) => m.product);
     }
     getPaymentMethodFmtAmount(pm, order) {
         const amount = order.getDefaultAmountDueToPayIn(pm);
