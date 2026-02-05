@@ -4,25 +4,42 @@ import { AlertDialog } from "@web/core/confirmation_dialog/confirmation_dialog";
 import { accountTaxHelpers } from "@account/helpers/account_tax";
 import { _t } from "@web/core/l10n/translation";
 import { debounce } from "@web/core/utils/timing";
+import { PosOrderAccounting } from "@point_of_sale/app/models/accounting/pos_order_accounting";
 
 patch(PosStore.prototype, {
     async setup() {
         await super.setup(...arguments);
         this.debouncedDiscount = debounce(this.applyDiscount.bind(this));
-        this.models["pos.order.line"].addEventListener("update", (data) => {
-            const line = this.models["pos.order.line"].get(data.id);
-            const order = line.order_id;
+
+        const updateOrderDiscount = (order) => {
             if (!order || order.state !== "draft") {
                 return;
             }
-
-            const isDiscountLine = line.isDiscountLine;
-            if (!order.globalDiscountPc || isDiscountLine) {
+            if (!order.globalDiscountPc) {
                 return;
             }
 
             const percentage = order.globalDiscountPc;
             this.debouncedDiscount(percentage, order); // Wait an animation frame before applying the discount
+        };
+
+        this.models["pos.order.line"].addEventListener("update", (data) => {
+            const line = this.models["pos.order.line"].get(data.id);
+            const order = line.order_id;
+
+            if (!line.isDiscountLine) {
+                updateOrderDiscount(order);
+            }
+        });
+
+        this.models["pos.order"].addEventListener("update", ({ id, fields }) => {
+            const areAccountingFields = fields?.some((field) =>
+                PosOrderAccounting.accountingFields.has(field)
+            );
+
+            if (areAccountingFields) {
+                updateOrderDiscount(this.models["pos.order"].get(id));
+            }
         });
     },
     selectOrderLine(order, line) {
@@ -92,6 +109,7 @@ patch(PosStore.prototype, {
             const existingLine = discountLinesMap[key];
 
             if (existingLine) {
+                existingLine.extra_tax_data = extra_tax_data;
                 existingLine.price_unit = baseLine.price_unit;
                 delete discountLinesMap[key];
             } else {
