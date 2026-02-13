@@ -748,7 +748,7 @@ class TestUi(TestPointOfSaleHttpCommon):
         '''
         self.product_a.available_in_pos = True
         self.pos_admin.write({
-            'group_ids': [Command.link(self.env.ref('base.group_system').id)],
+            'group_ids': [Command.link(self.env.ref('product.group_product_manager').id)],
         })
         self.main_pos_config.write({
             'is_margins_costs_accessible_to_every_user': True,
@@ -3573,6 +3573,17 @@ class TestUi(TestPointOfSaleHttpCommon):
             'fiscal_position_ids': [(6, 0, [fiscal_position.id])],
         })
         self.start_tour("/pos/ui?config_id=%d" % self.main_pos_config.id, 'test_product_configurator_price', login="pos_user")
+
+    def test_combo_no_free_item(self):
+        """ Test a product combo with no free item allowed. """
+        setup_product_combo_items(self)
+        for combo_item in self.office_combo.combo_ids:
+            combo_item.write({
+                'qty_free': 0,
+                'qty_max': 5,
+            })
+        self.main_pos_config.with_user(self.pos_user).open_ui()
+        self.start_pos_tour('test_combo_no_free_item')
 
 
 # This class just runs the same tests as above but with mobile emulation
