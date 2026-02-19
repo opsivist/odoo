@@ -1074,10 +1074,10 @@ class AccountMove(models.Model):
     def _compute_invoice_payment_term_id(self):
         for move in self:
             move = move.with_company(move.company_id)
-            if move.is_sale_document(include_receipts=True) and move.partner_id.property_payment_term_id:
-                move.invoice_payment_term_id = move.partner_id.property_payment_term_id
-            elif move.is_purchase_document(include_receipts=True) and move.partner_id.property_supplier_payment_term_id:
-                move.invoice_payment_term_id = move.partner_id.property_supplier_payment_term_id
+            if move.is_sale_document(include_receipts=True):
+                move.invoice_payment_term_id = move.partner_id.property_payment_term_id or move.invoice_payment_term_id
+            elif move.is_purchase_document(include_receipts=True):
+                move.invoice_payment_term_id = move.partner_id.property_supplier_payment_term_id or move.invoice_payment_term_id
             else:
                 move.invoice_payment_term_id = False
 
@@ -6899,6 +6899,9 @@ class AccountMove(models.Model):
         move._compute_name()  # because the name is given, we need to recompute in case it is the first invoice of the journal
 
         return move
+
+    def _attachment_fields_to_clear(self):
+        return super()._attachment_fields_to_clear() + ['message_main_attachment_id']
 
     def _message_post_after_hook(self, new_message, message_values):
         """ This method processes the attachments of a new mail.message. It handles the 3 following situations:
