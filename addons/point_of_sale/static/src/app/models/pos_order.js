@@ -110,6 +110,10 @@ export class PosOrder extends PosOrderAccounting {
         return this.state !== "draft";
     }
 
+    get canBeRemovedFromIndexedDB() {
+        return (this.finalized && this.isSynced) || this.state === "cancel";
+    }
+
     get totalQuantity() {
         return this.lines.reduce((sum, line) => sum + line.getQuantity(), 0);
     }
@@ -656,7 +660,7 @@ export class PosOrder extends PosOrderAccounting {
                   )
                 : defaultFiscalPosition;
             newPartnerPricelist =
-                this.models["product.pricelist"].find(
+                this.config.available_pricelist_ids.find(
                     (pricelist) => pricelist.id === newPartner.property_product_pricelist?.id
                 ) || this.config.pricelist_id;
         } else {

@@ -1014,7 +1014,7 @@ class PosOrder(models.Model):
                 product_accounts = stock_move.with_company(stock_move.company_id).product_id._get_product_accounts()
                 expense_account = product_accounts['expense']
                 stock_account = product_accounts['stock_valuation']
-                balance = -sum(stock_move.mapped('value'))
+                balance = stock_move.value if stock_move.is_out else -stock_move.value
                 aml_vals_list_per_nature['stock'].append({
                     'name': _("Stock variation for %s", stock_move.product_id.name),
                     'account_id': expense_account.id,
@@ -1178,13 +1178,15 @@ class PosOrder(models.Model):
         (payment_receivable_lines | invoice_receivable_lines).sudo().with_company(invoice.company_id).reconcile()
 
     def action_pos_order_cancel(self):
+        draft_orders = self.filtered(lambda o: o.state == 'draft')
         if self.env.context.get('active_ids'):
             orders = self.browse(self.env.context.get('active_ids'))
             order_is_in_futur = any(order.preset_time and order.preset_time.date() > fields.Date.today() for order in orders)
             if order_is_in_futur:
                 raise UserError(_('The order delivery / pickup date is in the future. You cannot cancel it.'))
+            if not draft_orders:
+                raise UserError(_('This order has already been paid. You cannot set it back to draft or edit it.'))
 
-        draft_orders = self.filtered(lambda o: o.state == 'draft')
         if draft_orders:
             draft_orders.write({'state': 'cancel'})
             for config in draft_orders.mapped('config_id'):
