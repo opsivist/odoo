@@ -457,7 +457,7 @@ export class ToggleBlockPlugin extends Plugin {
         const { toggle, title, content } = this.getClosestToggleTitleInfo(targetNode);
         if (title) {
             const selection = this.dependencies.selection.getEditableSelection();
-            if (isEmptyBlock(selection.anchorNode)) {
+            if (isEmptyBlock(closestBlock(selection.anchorNode))) {
                 const contentChildren = children(content);
                 if (contentChildren.length !== 1 || !isEmptyBlock(contentChildren[0])) {
                     toggle.after(...children(content));
@@ -465,6 +465,10 @@ export class ToggleBlockPlugin extends Plugin {
                 const baseContainer = this.dependencies.baseContainer.createBaseContainer();
                 baseContainer.appendChild(this.document.createElement("br"));
                 toggle.replaceWith(baseContainer);
+                const dir = toggle.getAttribute("dir");
+                if (dir) {
+                    baseContainer.setAttribute("dir", dir);
+                }
                 this.dependencies.selection.setCursorStart(baseContainer);
                 return true;
             }
