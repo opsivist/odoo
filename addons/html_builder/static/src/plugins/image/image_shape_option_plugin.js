@@ -18,9 +18,10 @@ import {
 } from "@html_editor/main/media/image_post_process_plugin";
 import { _t } from "@web/core/l10n/translation";
 import { BuilderAction } from "@html_builder/core/builder_action";
-import { getMimetype } from "@html_editor/utils/image";
+import { getFetchedMimetype, getMimetype } from "@html_editor/utils/image";
 import { withSequence } from "@html_editor/utils/resource";
 import { deepCopy, deepMerge } from "@web/core/utils/objects";
+import { handleImagesIfDataset } from "@html_builder/utils/image";
 
 /**
  * @typedef {Object.<string, {
@@ -91,6 +92,7 @@ export class ImageShapeOptionPlugin extends Plugin {
         process_image_post_handlers: this.processImagePost.bind(this),
         hover_effect_allowed_predicates: (el) => this.canHaveHoverEffect(el),
         image_shape_groups_providers: withSequence(0, () => deepCopy(imageShapeDefinitions)),
+        on_media_dialog_saved_handlers: withSequence(5, this.onMediaDialogSavedHandlers.bind(this)),
     };
     setup() {
         this.shapeSvgTextCache = {};
@@ -101,13 +103,29 @@ export class ImageShapeOptionPlugin extends Plugin {
             this.imageShapes[oldShapeId] = this.imageShapes[shapeId];
         }
     }
+    async onMediaDialogSavedHandlers(elements, { node }) {
+        const callback = async function (toProcessEl, nodeEl) {
+            const data = await loadImageInfo(toProcessEl);
+            if (!data.originalSrc) {
+                return;
+            }
+            toProcessEl.dataset.shape = nodeEl.dataset.shape;
+            for (const shapeInfo of ["shapeColors", "shapeFlip", "shapeRotate"]) {
+                if (nodeEl.dataset[shapeInfo]) {
+                    toProcessEl.dataset[shapeInfo] = nodeEl.dataset[shapeInfo];
+                }
+            }
+        };
+        await handleImagesIfDataset(elements, node, "shape", callback);
+    }
     async canHaveHoverEffect(imgEl) {
         const dataset = Object.assign({}, imgEl.dataset, await loadImageInfo(imgEl));
+        const isImageSupportedForShapes = await this.asyncIsImageSupportedForShapes(imgEl, dataset);
         return (
             imgEl.tagName === "IMG" &&
             !this.isDeviceShape(imgEl) &&
             !this.isAnimableShape(dataset.shape) &&
-            this.isImageSupportedForShapes(imgEl, dataset)
+            isImageSupportedForShapes
         );
     }
     isDeviceShape(img) {
@@ -127,6 +145,17 @@ export class ImageShapeOptionPlugin extends Plugin {
             return false;
         }
         return isImageSupportedForProcessing(getMimetype(img, dataset));
+    }
+    // TODO: this has been introduced for stable policy. In master, remove it
+    // and adapt 'isImageSupportedForShapes'.
+    async asyncIsImageSupportedForShapes(img, dataset = img.dataset) {
+        if (!!dataset.hoverEffect || !!dataset.shape) {
+            return true;
+        }
+        if (!dataset.originalId) {
+            return false;
+        }
+        return isImageSupportedForProcessing(await getFetchedMimetype(img, dataset));
     }
     async getShapeSvgText(shapeName) {
         // Compatibility with old shapes.
