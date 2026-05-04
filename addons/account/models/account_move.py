@@ -2405,7 +2405,7 @@ class AccountMove(models.Model):
             invoice_ids=tuple(self.ids),
         ))) if self.ids else {}
         for move in self:
-            move.reconciled_payment_ids = self.env['account.payment'].browse(invoice_payment_links.get(move.id)) | move.matched_payment_ids
+            move.reconciled_payment_ids = self.env['account.payment'].browse(invoice_payment_links.get(move.id))._filtered_access('read') | move.matched_payment_ids
 
     def _search_next_payment_date(self, operator, value):
         if operator not in ('in', '<', '<='):
@@ -6995,7 +6995,7 @@ class AccountMove(models.Model):
                     attachment_records |= self._from_files_data(extra_files_data)
                     new_message.attachment_ids = [Command.set(attachment_records.ids)]
                     message_values['attachment_ids'] = [Command.link(attachment.id) for attachment in attachment_records]
-                    res = super()._message_post_after_hook(new_message, message_values)
+                    res = super(AccountMove, self.with_context(no_document=True))._message_post_after_hook(new_message, message_values)
                 else:
                     sub_new_message = new_message.copy({
                         'res_id': invoice.id,
@@ -7006,7 +7006,7 @@ class AccountMove(models.Model):
                         'res_id': invoice.id,
                         'attachment_ids': [Command.link(attachment.id) for attachment in attachment_records],
                     }
-                    super(AccountMove, invoice)._message_post_after_hook(sub_new_message, sub_message_values)
+                    super(AccountMove, invoice.with_context(no_document=True))._message_post_after_hook(sub_new_message, sub_message_values)
                 invoice._fix_attachments_on_record_from_files_data(file_data_group, extra_files_data)
 
             for invoice, file_data_group in zip(invoices, file_data_groups):
