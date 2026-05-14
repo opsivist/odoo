@@ -5,7 +5,7 @@ from markupsafe import Markup
 
 from odoo import _, fields, models, Command
 from odoo.exceptions import UserError
-from odoo.tools import formatLang, frozendict, html2plaintext, html_escape, pdf, str2bool
+from odoo.tools import formatLang, frozendict, html2plaintext, html_escape, pdf, str2bool, unique
 from odoo.addons.account_edi_ubl_cii.models.account_edi_common import (
     FloatFmt,
     GST_COUNTRY_CODES,
@@ -2380,7 +2380,7 @@ class AccountEdiUBL(models.AbstractModel):
             if note := node.text:
                 payment_references.append(note)
 
-        if payment_reference := ','.join(payment_references):
+        if payment_reference := ','.join(unique(payment_references)):
             collected_values['to_write']['payment_reference'] = payment_reference
 
     def _import_ubl_invoice_add_delivery(self, collected_values):
@@ -2872,6 +2872,15 @@ class AccountEdiUBL(models.AbstractModel):
             for charge in line_collected_values['charges']:
                 if tax_values := charge.get('attempt_tax_values'):
                     tax_values_list.append(tax_values)
+
+        if customer := collected_values.get('customer_values', {}).get('customer'):
+            fiscal_position = self.env['account.move'].new({
+                'company_id': collected_values['company'].id,
+                'move_type': collected_values['invoice'].move_type,
+                'partner_id': customer.id,
+            }).fiscal_position_id
+            for tax_values in tax_values_list:
+                tax_values['fiscal_position'] = fiscal_position
 
         self.env['account.tax']._import_retrieve_tax(
             search_plan=self._import_ubl_retrieve_taxes_search_plan(collected_values),
