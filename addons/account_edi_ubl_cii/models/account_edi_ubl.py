@@ -2626,7 +2626,7 @@ class AccountEdiUBL(models.AbstractModel):
                 price_subtotal = price_allowance_base_amount
             elif price_allowance_amount:
                 price_discount_amount = -price_allowance_amount
-                price_subtotal = price_amount
+                price_subtotal = price_amount - price_allowance_amount
             else:
                 price_discount_amount = 0.0
                 price_subtotal = price_amount
@@ -3147,7 +3147,7 @@ class AccountEdiUBL(models.AbstractModel):
         for base_line in base_lines:
             for tax_data in base_line['tax_details']['taxes_data']:
                 if tax_data['tax'].price_include:
-                    base_line['price_unit'] += tax_data['raw_tax_amount_currency']
+                    base_line['price_unit'] += tax_data['raw_tax_amount_currency'] / (base_line['quantity'] if base_line['quantity'] else 1)
 
         # Remove lines having a zero amount except 100% discounts
         collected_values['base_lines'] = [
