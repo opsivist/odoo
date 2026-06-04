@@ -1058,9 +1058,10 @@ class AccountMove(models.Model):
                 move.partner_bank_id = payment_method.journal_id.bank_account_id
                 continue
 
-            move.partner_bank_id = move.bank_partner_id.bank_ids.filtered(
-                lambda bank: not bank.company_id or bank.company_id == move.company_id
-            ).sorted(key=_bank_selection_key)[:1]
+            move.partner_bank_id = move.bank_partner_id.bank_ids.filtered_domain([
+                *self.env['res.partner.bank']._check_company_domain(move.company_id),
+                ('active', '=', True),  # active_test could be False in the context
+            ]).sorted(key=_bank_selection_key)[:1]
 
     @api.depends('partner_id')
     def _compute_invoice_payment_term_id(self):
@@ -1580,16 +1581,23 @@ class AccountMove(models.Model):
         is_invoice = self.is_invoice(include_receipts=True)
         sign = self.direction_sign if is_invoice else 1
 
-        return self.env['account.tax']._prepare_base_line_for_taxes_computation(
-            product_line,
-            price_unit=product_line.price_unit if is_invoice else product_line.amount_currency,
-            quantity=product_line.quantity if is_invoice else 1.0,
-            discount=product_line.discount if is_invoice else 0.0,
-            rate=self._get_product_base_line_currency_rate(product_line),
-            sign=sign,
-            special_mode=False if is_invoice else 'total_excluded',
-            name=product_line.name,
-        )
+        kwargs = {
+            'price_unit': product_line.price_unit if is_invoice else product_line.amount_currency,
+            'quantity': product_line.quantity if is_invoice else 1.0,
+            'discount': product_line.discount if is_invoice else 0.0,
+            'rate': self._get_product_base_line_currency_rate(product_line),
+            'sign': sign,
+            'special_mode': False if is_invoice else 'total_excluded',
+            'name': product_line.name,
+        }
+
+        computation_key = (product_line.extra_tax_data or {}).get('computation_key', '')
+        if computation_key.startswith('global_discount'):
+            kwargs['special_type'] = 'global_discount'
+        elif computation_key.startswith('down_payment'):
+            kwargs['special_type'] = 'down_payment'
+
+        return self.env['account.tax']._prepare_base_line_for_taxes_computation(product_line, **kwargs)
 
     def _prepare_epd_base_line_for_taxes_computation(self, epd_line):
         """ Convert an account.move.line having display_type='epd' into a base line for the taxes computation.
