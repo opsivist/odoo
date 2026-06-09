@@ -9,6 +9,8 @@ const CarouselSliderEdit = (I) =>
             _root: {
                 ...this.dynamicContent._root,
                 "t-on-content_changed": this.onContentChanged,
+                "t-on-focusin": () => {},
+                "t-on-focusout": () => {},
             },
         };
         // Pause carousel in edit mode.
@@ -23,11 +25,20 @@ const CarouselSliderEdit = (I) =>
         onContentChanged() {
             this.computeMaxHeight();
         }
+        start() {
+            super.start();
+            // Monitor carousel size changes to update maxHeight
+            const resizeObserver = new ResizeObserver(
+                this.debounced(() => {
+                    this.computeMaxHeight();
+                }, 250)
+            );
+            resizeObserver.observe(this.el);
+            this.registerCleanup(() => resizeObserver.unobserve(this.el));
+        }
     };
 
-registry
-    .category("public.interactions.edit")
-    .add("website.carousel_slider", {
-        Interaction: CarouselSlider,
-        mixin: CarouselSliderEdit,
-    });
+registry.category("public.interactions.edit").add("website.carousel_slider", {
+    Interaction: CarouselSlider,
+    mixin: CarouselSliderEdit,
+});
