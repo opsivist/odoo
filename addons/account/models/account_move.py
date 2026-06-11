@@ -3282,7 +3282,7 @@ class AccountMove(models.Model):
         def get_base_line_tracked_fields(line):
             grouping_key = AccountTax._prepare_base_line_grouping_key(fake_base_line)
             if line.move_id.is_invoice(include_receipts=True):
-                extra_fields = ['price_unit', 'quantity', 'discount']
+                extra_fields = ['price_unit', 'quantity', 'discount', 'deductible_amount']
             else:
                 extra_fields = ['amount_currency']
             return list(grouping_key.keys()) + extra_fields
@@ -3522,7 +3522,7 @@ class AccountMove(models.Model):
             rate = move.invoice_currency_rate
 
             for line in move.line_ids.filtered(lambda line: line.display_type == 'product'):
-                if float_compare(line.deductible_amount, 100, precision_rounding=2) == 0:
+                if float_compare(line.deductible_amount, 100, precision_digits=2) == 0:
                     continue
 
                 percentage = (1 - line.deductible_amount / 100)
@@ -5770,7 +5770,9 @@ class AccountMove(models.Model):
 
         def is_computed_with_mixin(move):
             # if computed with the mixin we are guaranteed to not have gaps, need to bypass to avoid concurrency issues
-            format_string, format_values = move._get_next_sequence_format()
+            if not move.name or move.name == '/':
+                return False
+            format_string, format_values = move._get_sequence_format_param(move.name)
             format_values.pop('seq')
             cache_key = (format_string.format(**format_values, seq=0), self._sequence_index and self[self._sequence_index])
             return sequence_mixin_cache.get(cache_key) is not None
