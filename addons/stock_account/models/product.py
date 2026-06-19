@@ -270,7 +270,7 @@ class ProductProduct(models.Model):
             total_value_by_company_id[company.id] = total_value_by_product_id
 
         for product in self:
-            product.total_value = sum(total_value_by_company_id[c.id].get(product.id, 0) for c in self.env.companies)
+            product.total_value = sum(c.currency_id._convert(total_value_by_company_id[c.id].get(product.id, 0), self.env.company.currency_id) for c in self.env.companies)
             valued_quantity = valued_quantity_by_product_id[product.id]
             product.avg_cost = product.total_value / valued_quantity if valued_quantity else std_price_by_company_id[self.env.company.id].get(product.id, product.standard_price)
 
@@ -637,14 +637,14 @@ class ProductProduct(models.Model):
                 continue
             products_by_cost_method[product.cost_method].add(product.id)
         for cost_method, product_ids in products_by_cost_method.items():
-            products = self.env['product.product'].browse(product_ids)
+            products = self.env['product.product'].sudo().browse(product_ids)
             if cost_method == 'standard':
                 continue
 
             if extra_value is not None and extra_quantity is not None:
                 products_with_incremental_recompute = (
                     self.env['product.product'].concat(*extra_value.keys()) & products
-                ).with_context(
+                ).sudo().with_context(
                     allowed_company_ids=self.env.company.ids
                 )._with_valuation_context()
                 products_with_incremental_recompute.fetch(['qty_available'])
