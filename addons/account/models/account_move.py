@@ -3570,6 +3570,15 @@ class AccountMove(models.Model):
     @contextmanager
     def _sync_dynamic_line(self, existing_key_fname, needed_vals_fname, needed_dirty_fname, line_type, container):
         def existing():
+            if line_type == 'epd':
+                # Keep keyless EPD lines in the sync map so they can be cleaned/rebuilt
+                # when invoice lines/taxes are overwritten (e.g. PO auto-complete on OCR bills).
+                return {
+                    line: (line[existing_key_fname] or frozendict({'epd_line_id': line.id}))
+                    for line in container['records'].line_ids
+                    if line.display_type == 'epd'
+                    if line[existing_key_fname] or line.id
+                }
             return {
                 line: line[existing_key_fname]
                 for line in container['records'].line_ids
@@ -6373,12 +6382,13 @@ class AccountMove(models.Model):
                 if not move:
                     continue
                 move._post()
-                self.env['ir.cron']._commit_progress(1)
             except UserError as e:
                 self.env.cr.rollback()
                 msg = _('The move could not be posted for the following reason: %(error_message)s', error_message=e)
                 move.message_post(body=msg, message_type='comment')
-                self.env['ir.cron']._commit_progress()
+                move.auto_post = 'no'
+            finally:
+                self.env['ir.cron']._commit_progress(1)
 
     @api.model
     def _cron_account_move_send(self, job_count=10):
@@ -7298,7 +7308,7 @@ class AccountMove(models.Model):
             return []
 
         if self.is_purchase_document(include_receipts=True):
-            attachment = self.message_main_attachment_id
+            attachment = self.message_main_attachment_id.sudo()
             return [{
                 'filename': attachment.name,
                 'filetype': attachment.mimetype,
