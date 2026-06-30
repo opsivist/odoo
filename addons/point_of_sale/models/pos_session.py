@@ -141,7 +141,7 @@ class PosSession(models.Model):
             'pos.category', 'pos.bill', 'res.company', 'product.template', 'product.product', 'product.attribute', 'account.tax', 'account.tax.group', 'product.attribute.custom.value',
             'product.template.attribute.line', 'product.template.attribute.value', 'product.template.attribute.exclusion', 'product.combo', 'product.combo.item', 'res.users', 'res.partner', 'product.uom',
             'decimal.precision', 'uom.uom', 'res.country', 'res.country.state', 'res.lang', 'product.category', 'product.pricelist', 'product.pricelist.item',
-            'account.cash.rounding', 'account.fiscal.position', 'stock.picking.type', 'res.currency', 'pos.note', 'product.tag', 'ir.module.module', 'account.move', 'account.account']
+            'account.cash.rounding', 'account.fiscal.position', 'stock.picking.type', 'res.currency', 'pos.note', 'product.tag', 'ir.module.module', 'account.move', 'account.account', 'product.removal']
 
     @api.model
     def _load_pos_data_domain(self, data, config):
@@ -725,7 +725,7 @@ class PosSession(models.Model):
             return {
                 'successful': False,
                 'type': 'alert',
-                'title': 'Session already closed',
+                'title': _('Session already closed'),
                 'message': _("The session has been already closed by another User. "
                             "All sales completed in the meantime have been saved in a "
                             "Rescue Session, which can be reviewed anytime and posted "
