@@ -2623,8 +2623,8 @@ Please change the quantity done or the rounding precision in your settings.""",
             return
 
         product_domains = Domain.OR(
-            [('product_id', '=', move.product_id.id), ('location_id', 'parent_of', move.location_dest_id.id)]
-            for move in self
+            [('product_id', 'in', moves.product_id.ids), ('location_id', 'parent_of', location_dest.id)]
+            for location_dest, moves in self.grouped('location_dest_id').items()
         )
         static_domain = [('state', 'in', ['confirmed', 'partially_available']),
                          ('procure_method', '=', 'make_to_stock'),
@@ -2707,7 +2707,7 @@ Please change the quantity done or the rounding precision in your settings.""",
         """ Open the form view of the move's reference document, if one exists, otherwise open form view of self
         """
         self.ensure_one()
-        if not self.is_inventory and self.location_dest_usage == 'inventory':
+        if not self.is_inventory and self.location_dest_usage == 'inventory' and self.scrap_id:
             return {
                 'res_model': 'stock.scrap',
                 'type': 'ir.actions.act_window',
